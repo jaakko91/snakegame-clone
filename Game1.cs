@@ -53,9 +53,13 @@ namespace SnakeGame
         int[] snakeXbuffer = new int[501];
         int[] snakeYbuffer = new int[501];
 
-        int snakeX, snakeY, snakeLength;
-        int appleX, appleY;
-        int score;
+        int score, snakeX, snakeY, snakeLength;
+
+        //Arrays to store apple positions (there can be multiple apples at the same time)
+        int[] appleX = new int[10];
+        int[] appleY = new int[10];
+
+        //Difficulty level in string format to show on screen
         string difficulty;
 
         //Random number generator
@@ -139,6 +143,13 @@ namespace SnakeGame
                 snakeYbuffer[i] = 0;
             }
 
+            //Reset apple array. -1 means no apple.
+            for (int i = 0; i < 10; i++)
+            {
+                appleX[i] = -1;
+                appleY[i] = -1;
+            }
+
             //Init timing system
             tickCount = 0;
             //Init game speed
@@ -155,7 +166,8 @@ namespace SnakeGame
 
             animationTimer = 0;
 
-            //Generate first apple
+            //Start game with two generated apples
+            generateApple();
             generateApple();
             
             //Start game
@@ -164,31 +176,81 @@ namespace SnakeGame
 
         }
 
-        //Spawn apple and make sure it is not inside wall
+        //Finds a free memory from apple array and inserts new apple coordinates to the array.
+        //Returns true if it was successful.
+        private bool insertApple(int newAppleX, int newAppleY)
+        {
+            for (int i = 0; i < 10; i++)
+            {
+                //Found free spot for apple, insert new apple to array and return true.
+                if (appleX[i] == -1 && appleY[i] == -1)
+                {
+                    appleX[i] = newAppleX;
+                    appleY[i] = newAppleY;
+                    return true;
+                }
+            }
+            //Array is full, there are already 10 apples on the playfield.
+            return false;
+        }
+
+        //Search array if apple exists in specific coordinates.
+        //Returns -1 if not found, otherwise returns the number of the memory place in array where it was found.
+        private int searchApple(int x, int y)
+        {
+            for (int i = 0; i < 10; i++)
+            {
+                if (appleX[i] == x && appleY[i] == y)
+                    return i;
+            }
+            return -1;   
+        }
+
+        //Removes the apple which number is passed as a parameter from the list.
+        private void removeApple(int n)
+        {
+            appleX[n] = -1;
+            appleY[n] = -1;
+        }
+
+        //Spawn apple and make sure it is not inside wall or another apple
         private void generateApple()
         {
+            int tempX = -1;
+            int tempY = -1;
             bool posOK = false;
+
             while (!posOK)
             {
                 //Position between 1-28 in playfield
-                appleX = getrandom.Next(0, 27) + 1;
-                appleY = getrandom.Next(0, 27) + 1;
-
+                tempX = getrandom.Next(0, 27) + 1;
+                tempY = getrandom.Next(0, 27) + 1;
+                
                 //Check that position is empty on the field (no wall)
-                if (playField[appleX, appleY] == 0)
+                if (playField[tempX, tempY] == 0)
                 {
                     //Check that apple is reachable (so that there is entry and exit point around apple)
-                    int wallCount = playField[appleX,(appleY - 1)] + playField[(appleX + 1), appleY] + playField[appleX,(appleY + 1)] + playField[(appleX - 1), appleY];
-                    // If OK, then exit loop
+                    int wallCount = playField[tempX,(tempY - 1)] + playField[(tempX + 1), tempY] + playField[tempX,(tempY + 1)] + playField[(tempX - 1), tempY];
                     if (wallCount <= 2)
-                        posOK = true;
+                        {
+                            //Check that there isn't apple already at that position. If no, then position is OK, exit loop.
+                            if (searchApple(tempX, tempY) == -1)
+                                posOK = true;
+                        }
+
+                            
                 }
             }
+            //Insert apple to array.
+            insertApple(tempX, tempY);
         }
 
-        //Update difficulty level based on score
+        //Update difficulty level based on score. If difficulty level increases, spawn a new apple.
+        //That way there will always be one more apple, since new one is always generated when one is eaten.
         private void updateDifficulty()
         {
+            float oldSpeed = gameSpeed;
+
             if (score >= 10 && score < 100)
             {
                 difficulty = "II";
@@ -214,6 +276,9 @@ namespace SnakeGame
                 difficulty = "IIIIII";
                 gameSpeed = 110;
             }
+
+            if (oldSpeed != gameSpeed)
+                generateApple();
         }
         
         /*Check collision for new position, return value:
@@ -224,21 +289,32 @@ namespace SnakeGame
         */
         private int collisionCheck(int[,] map, int x, int y)
         {
-            //Collision check with apple
-            if (x == appleX && y == appleY)
+            int t = searchApple(x, y);
+            if (t != -1)
+            {
+                removeApple(t);
                 return 3;
-
+            }
+            /*
+            //Collision check with apples
+            for (int i = 0; i < 10; i++)
+            {
+                if (appleX[i] == x && appleY[i] == y)
+                    return 3;
+            }
+            */
             //Collision check with worm tail
             for (int i = 0; i < snakeLength; i++)
             {
                 if (snakeX == snakeXbuffer[i] && snakeY == snakeYbuffer[i])
                     return 2;
             }
+
             //Collision check with wall
             if (map[x, y] == 1)
                 return 1;
 
-            //If we got here there were no collisions, return 0
+            //If we got here, there were no collisions, return 0
             return 0;
         }
 
@@ -255,10 +331,14 @@ namespace SnakeGame
             spriteBatch.Draw(snakehead, new Vector2(snakeX * spriteSize + leftOffset, snakeY * spriteSize), Color.White);
         }
 
-        //Draw apple
+        //Draw apples
         private void drawApple()
         {
-            spriteBatch.Draw(apple, new Vector2(appleX * spriteSize + leftOffset, appleY * spriteSize), Color.White);
+            for (int i = 0; i < 10; i++)
+            {
+                if (appleX[i] != -1 && appleY[i] != -1)
+                    spriteBatch.Draw(apple, new Vector2(appleX[i] * spriteSize + leftOffset, appleY[i] * spriteSize), Color.White);
+            }
         }
 
         //Draw playfield
